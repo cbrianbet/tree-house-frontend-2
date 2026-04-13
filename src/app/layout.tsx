@@ -1,13 +1,14 @@
 import { Outfit } from "next/font/google";
 import "./globals.css";
+import "leaflet/dist/leaflet.css";
 import "swiper/css";
 import "swiper/css/navigation";
 import "swiper/css/pagination";
 import "swiper/css/autoplay";
 import { SidebarProvider } from "@/context/SidebarContext";
 import { ThemeProvider } from "@/context/ThemeContext";
+import { AuthProvider } from "@/context/AuthContext";
 import React from "react";
-import SessionProviderWrapper from "@/SessionProviderWrapper";
 
 const outfit = Outfit({
   variable: "--font-outfit-sans",
@@ -15,19 +16,19 @@ const outfit = Outfit({
 });
 
 export default function RootLayout({
-  children
+  children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
   return (
-        <html lang="en">
-          <body className={`${outfit.variable} dark:bg-gray-900`}>
-          <SessionProviderWrapper>
-            <ThemeProvider>
-              <SidebarProvider>{children}</SidebarProvider>
-            </ThemeProvider>
-          </SessionProviderWrapper>
-          </body>
-        </html>
+    <html lang="en">
+      <body className={`${outfit.variable} bg-white`}>
+        <AuthProvider>
+          <ThemeProvider>
+            <SidebarProvider>{children}</SidebarProvider>
+          </ThemeProvider>
+        </AuthProvider>
+      </body>
+    </html>
   );
 }

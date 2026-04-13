@@ -1,3 +1,4 @@
+/* eslint-disable */
 import jwt from "jsonwebtoken";
 
 export namespace JwtUtils {

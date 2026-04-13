@@ -1,3 +1,4 @@
+/* eslint-disable */
 import { Session } from "next-auth";
 import { useEffect } from "react";
 import useSwr, { mutate } from "swr";

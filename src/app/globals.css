@@ -1,4 +1,5 @@
 @import url("https://fonts.googleapis.com/css2?family=Outfit:wght@100..900&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap");
 
 @tailwind base;
 @tailwind components;
@@ -59,6 +60,31 @@
   .menu-dropdown-badge-inactive {
     @apply bg-brand-50 group-hover:bg-brand-100 dark:bg-brand-500/15 dark:group-hover:bg-brand-500/20;
   }
+}
+
+/* Admin dashboard (DESIGN.md — Geist + Geist Mono, ink palette) */
+.th-admin-dashboard {
+  font-family: "Geist", ui-sans-serif, system-ui, sans-serif;
+  font-size: 13px;
+  color: #0d1520;
+}
+.th-admin-dashboard .th-admin-mono {
+  font-family: "Geist Mono", ui-monospace, monospace;
+}
+
+@keyframes th-admin-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.th-admin-kpi {
+  animation: th-admin-fade-up 0.25s ease both;
 }
 
 @layer utilities {
