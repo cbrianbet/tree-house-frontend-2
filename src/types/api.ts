@@ -269,11 +269,70 @@ export interface PropertyAgent {
 
 // ── Billing ──
 
-export interface BillingConfig {
+export type LateFeeMode = "percentage" | "fixed";
+
+/** Nested object on billing config GET/POST (writable via config payload). */
+export interface PropertyBillingNotificationSettings {
+  remind_before_due_days: number | null;
+  remind_after_overdue_days: number | null;
+  send_receipt_on_payment: boolean;
+}
+
+/** Writable billing fields (POST `/api/billing/config/<property_id>/`). */
+export interface BillingConfigPayload {
   rent_due_day: number;
   grace_period_days: number;
   late_fee_percentage: string;
-  late_fee_max_percentage: string;
+  late_fee_max_percentage: string | null;
+  invoice_lead_days: number;
+  late_fee_mode: LateFeeMode;
+  late_fee_fixed_amount: string | null;
+  mpesa_paybill: string;
+  mpesa_account_label: string;
+  bank_name: string;
+  bank_account: string;
+  payment_notes: string;
+  notification_settings: PropertyBillingNotificationSettings | null;
+}
+
+/** GET `/api/billing/config/<property_id>/` — includes read-only metadata when configured. */
+export interface BillingConfig extends BillingConfigPayload {
+  configured?: boolean;
+  id?: number;
+  property?: number;
+  updated_at?: string;
+  updated_by?: number | null;
+}
+
+/** GET `/api/billing/properties/<pk>/billing-preview/` */
+export interface BillingPreview {
+  configured: boolean;
+  property: number;
+  invoice_lead_days: number;
+  rent_due_day: number;
+  grace_period_days: number;
+  next_invoice_generation_date: string | null;
+  next_rent_due_date: string | null;
+  active_lease_count?: number;
+  estimated_monthly_rent_total?: string;
+}
+
+export type PaymentStatus = "pending" | "completed" | "failed" | string;
+
+export interface Payment {
+  id: number;
+  invoice: number;
+  amount: string;
+  stripe_payment_intent_id: string;
+  stripe_charge_id: string;
+  status: PaymentStatus;
+  paid_at: string | null;
+  created_at: string;
+}
+
+export interface ManualPaymentResponse {
+  payment: Payment;
+  receipt: Receipt;
 }
 
 export type InvoiceStatus =
@@ -294,6 +353,17 @@ export interface Invoice {
   total_amount: string;
   amount_paid?: string;
   status: InvoiceStatus;
+  created_at?: string;
+}
+
+/** `POST /api/billing/invoices/` — manual invoice (admin / owner / assigned agent). */
+export interface InvoiceCreateRequest {
+  lease: number;
+  period_start: string;
+  period_end: string;
+  due_date: string;
+  /** Omit to use the lease’s default rent. */
+  rent_amount?: string;
 }
 
 export interface PayInvoiceResponse {
@@ -361,6 +431,10 @@ export interface Bid {
   id: number;
   request: number;
   artisan: number;
+  artisan_name?: string;
+  artisan_rating?: string;
+  artisan_trade?: string;
+  artisan_job_count?: number;
   proposed_price: string;
   message: string;
   status: BidStatus;
@@ -463,12 +537,29 @@ export interface DashboardData {
 
 // ── Charge Types ──
 
+export type ChargeKind = "fixed" | "variable" | "per_unit";
+
 export interface ChargeType {
   id: number;
   property: number;
   name: string;
+  /** Present on newer API responses; UI defaults to `variable`. */
+  charge_kind?: ChargeKind;
+  default_amount?: string | null;
+  description?: string;
+  display_order?: number;
+  is_active?: boolean;
   created_by: number;
   created_at: string;
+}
+
+export interface ChargeTypeCreateRequest {
+  name: string;
+  charge_kind?: ChargeKind;
+  default_amount?: string | null;
+  description?: string;
+  display_order?: number;
+  is_active?: boolean;
 }
 
 // ── Additional Income ──
@@ -527,6 +618,13 @@ export interface ExpenseCreateRequest {
 
 // ── Financial Reports ──
 
+export interface OccupancySnapshot {
+  period: string;
+  occupied_units: number;
+  total_units: number;
+  occupancy_pct: string | null;
+}
+
 export interface FinancialReport {
   property: number;
   period: string;
@@ -551,6 +649,13 @@ export interface FinancialReport {
     partial: number;
     cancelled: number;
   };
+  occupancy: {
+    occupied_units: number;
+    total_units: number;
+    occupancy_pct: string | null;
+  } | null;
+  occupancy_series: OccupancySnapshot[];
+  occupancy_avg_pct: string | null;
 }
 
 // ── Account Self-Service ──
@@ -651,16 +756,16 @@ export interface TenantReviewCreateRequest {
 // ── Notifications ──
 
 export type NotificationType =
-  | "payment_due"
-  | "payment_received"
-  | "maintenance_update"
-  | "new_maintenance"
-  | "new_application"
-  | "application_update"
-  | "lease_expiry"
   | "message"
+  | "maintenance"
+  | "payment"
+  | "payment_reminder"
+  | "lease"
   | "dispute"
-  | "new_listing";
+  | "application"
+  | "new_listing"
+  | "moving"
+  | "account";
 
 export interface Notification {
   id: number;
@@ -1092,30 +1197,6 @@ export interface TenantApplicationItem {
   created_at: string;
 }
 
-// ── Tenant Dashboard (full nested shape from /api/dashboard/tenant/) ──
-
-export interface TenantDashboardFull {
-  active_lease: {
-    id: number;
-    unit: {
-      unit_number: string;
-      property: { name: string; address: string };
-    };
-    start_date: string;
-    end_date: string;
-    rent_amount: string;
-    is_active: boolean;
-  } | null;
-  invoice_summary: {
-    total_invoices: number;
-    paid: number;
-    pending: number;
-    overdue: number;
-  };
-  open_maintenance: number;
-  unread_notifications: number;
-}
-
 // ── Public Unit Search (shape returned by /api/property/units/public/) ──
 
 export interface PublicUnit {
@@ -1139,6 +1220,110 @@ export interface PublicUnit {
   updated_at?: string;
   /** Present when API embeds unit images on public listing responses */
   images?: UnitImage[];
+}
+
+// ── Lightweight User Profile Lookup ──
+
+export interface UserProfile {
+  id: number;
+  first_name: string;
+  last_name: string;
+  phone: string;
+  role: string;
+}
+
+// ── Maintenance Timeline ──
+
+export interface MaintenanceTimelineEvent {
+  event_type: string;
+  description: string;
+  actor: string;
+  created_at: string;
+}
+
+// ── Monitoring (Admin only) ──
+
+export type MetricType =
+  | "overdue_invoice_count"
+  | "monthly_revenue"
+  | "occupancy_rate"
+  | "open_maintenance_count"
+  | "open_dispute_count"
+  | "pending_application_count"
+  | "payment_success_rate";
+
+export interface SystemMetric {
+  id: number;
+  metric_type: MetricType;
+  value: string;
+  recorded_at: string;
+}
+
+export type AlertCondition = "gt" | "gte" | "lt" | "lte";
+export type AlertSeverity = "info" | "warning" | "critical";
+export type AlertInstanceStatus = "triggered" | "acknowledged" | "resolved";
+
+export interface AlertRule {
+  id: number;
+  name: string;
+  description: string;
+  metric_type: MetricType;
+  condition: AlertCondition;
+  threshold_value: string;
+  severity: AlertSeverity;
+  enabled: boolean;
+  created_by: number | null;
+  created_at: string;
+}
+
+export interface AlertRuleCreateRequest {
+  name: string;
+  description?: string;
+  metric_type: MetricType;
+  condition: AlertCondition;
+  threshold_value: string;
+  severity: AlertSeverity;
+  enabled?: boolean;
+}
+
+export interface AlertInstance {
+  id: number;
+  rule: number;
+  rule_name: string;
+  rule_severity: AlertSeverity;
+  rule_metric_type: MetricType;
+  status: AlertInstanceStatus;
+  triggered_at: string;
+  triggered_value: string;
+  acknowledged_by: number | null;
+  acknowledged_by_username: string | null;
+  acknowledged_at: string | null;
+  resolved_at: string | null;
+  note: string;
+}
+
+export interface MonitoringDashboard {
+  health_status: "healthy" | "warning" | "critical";
+  active_alert_counts: {
+    critical: number;
+    warning: number;
+    info: number;
+  };
+  latest_metrics: Record<string, { value: string; recorded_at: string }>;
+  top_active_alerts: AlertInstance[];
+  trends: Record<string, { value: string; recorded_at: string }[]>;
+}
+
+export interface ImpersonationLog {
+  id: number;
+  admin: number;
+  admin_username: string;
+  target_user: number;
+  target_username: string;
+  target_role: string;
+  path: string;
+  method: string;
+  timestamp: string;
 }
 
 // ── Errors ──

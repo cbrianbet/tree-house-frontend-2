@@ -10,6 +10,7 @@ import {
   updateUnit,
   uploadUnitImage,
   listUnitImages,
+  deleteUnitImage,
   listUnitTenantInvitations,
   createUnitTenantInvitation,
   resendTenantInvitation,
@@ -20,6 +21,7 @@ import { listInvoices } from "@/lib/api/billing";
 import { listRequests } from "@/lib/api/maintenance";
 import { useAuth } from "@/context/AuthContext";
 import { ROLE_ADMIN, ROLE_AGENT, ROLE_LANDLORD, ROLE_TENANT } from "@/constants/roles";
+import PageLoader from "@/components/ui/PageLoader";
 import type {
   Unit,
   Lease,
@@ -278,6 +280,7 @@ export default function UnitDetailPage() {
   const [invitations, setInvitations] = useState<TenantInvitation[]>([]);
   const [inviteBusy, setInviteBusy] = useState(false);
   const [resendBusyId, setResendBusyId] = useState<number | null>(null);
+  const [deletingImageId, setDeletingImageId] = useState<number | null>(null);
 
   // Edit form state
   const [editName, setEditName] = useState("");
@@ -386,6 +389,20 @@ export default function UnitDetailPage() {
     }
   }
 
+  async function handleDeleteImage(imageId: number) {
+    if (!confirm("Remove this photo? It is shared for the whole property and will disappear from search listings.")) return;
+    setDeletingImageId(imageId);
+    try {
+      await deleteUnitImage(unitId, imageId);
+      showToast("Photo removed");
+      setImages(await listUnitImages(unitId));
+    } catch {
+      showToast("Could not delete photo");
+    } finally {
+      setDeletingImageId(null);
+    }
+  }
+
   async function handleInviteTenant(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!isManager || !unit || unit.is_occupied) return;
@@ -438,14 +455,7 @@ export default function UnitDetailPage() {
   }
 
   if (loading) {
-    return (
-      <div style={{ padding: "20px 24px", display: "flex", flexDirection: "column", gap: 14 }}>
-        {[130, 50, 300].map((h, i) => (
-          <div key={i} style={{ height: h, borderRadius: 14, background: "linear-gradient(90deg,#E8E7E1 25%,#F2F1EB 50%,#E8E7E1 75%)", backgroundSize: "700px 100%", animation: "shimmer 1.4s infinite linear" }} />
-        ))}
-        <style>{`@keyframes shimmer{from{background-position:-700px 0}to{background-position:700px 0}}`}</style>
-      </div>
-    );
+    return <PageLoader />;
   }
 
   if (!unit) {
@@ -1185,31 +1195,92 @@ export default function UnitDetailPage() {
                 No photos yet. {isManager ? "Upload some to show on public search." : ""}
               </div>
             ) : (
-              <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr", gap: 8, marginBottom: 12 }}>
-                <div style={{ borderRadius: 14, overflow: "hidden", height: 180, background: "#D4E8D0", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={apiMediaUrl(images[0].image)} alt="Hero" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                </div>
-                {images.slice(1, 3).map((img, i) => (
-                  <div key={img.id} style={{ borderRadius: 8, overflow: "hidden", background: C.gray100, display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 10, marginBottom: 12 }}>
+                {images.map((img, idx) => (
+                  <div
+                    key={img.id}
+                    style={{
+                      position: "relative",
+                      borderRadius: 12,
+                      overflow: "hidden",
+                      aspectRatio: "4 / 3",
+                      background: C.gray100,
+                      border: `0.5px solid ${C.border}`,
+                    }}
+                  >
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={apiMediaUrl(img.image)} alt={`Photo ${i + 2}`} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                    <img
+                      src={apiMediaUrl(img.image)}
+                      alt={`Photo ${idx + 1}`}
+                      style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                    />
+                    {idx === 0 && (
+                      <span
+                        style={{
+                          position: "absolute",
+                          left: 8,
+                          top: 8,
+                          background: "rgba(0,0,0,0.55)",
+                          color: "#fff",
+                          fontSize: 10,
+                          fontWeight: 600,
+                          padding: "3px 8px",
+                          borderRadius: 6,
+                          textTransform: "uppercase",
+                          letterSpacing: "0.3px",
+                        }}
+                      >
+                        Hero
+                      </span>
+                    )}
+                    {isManager && (
+                      <button
+                        type="button"
+                        disabled={deletingImageId === img.id}
+                        onClick={() => handleDeleteImage(img.id)}
+                        style={{
+                          position: "absolute",
+                          right: 8,
+                          bottom: 8,
+                          height: 28,
+                          padding: "0 10px",
+                          background: C.red600,
+                          color: "#fff",
+                          border: "none",
+                          borderRadius: 6,
+                          fontSize: 11,
+                          fontWeight: 500,
+                          fontFamily: "inherit",
+                          cursor: deletingImageId === img.id ? "wait" : "pointer",
+                          opacity: deletingImageId === img.id ? 0.7 : 1,
+                        }}
+                      >
+                        {deletingImageId === img.id ? "…" : "Delete"}
+                      </button>
+                    )}
                   </div>
                 ))}
-                {images.length < 3 &&
-                  Array.from({ length: 3 - images.length }).map((_, i) => (
-                    isManager ? (
-                      <label key={i} style={{ borderRadius: 8, border: `1.5px dashed ${C.borderMd}`, background: C.gray50, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
-                        <svg viewBox="0 0 24 24" style={{ width: 20, height: 20, fill: "none", stroke: C.gray500, strokeWidth: 1.5, strokeLinecap: "round" }}>
-                          <line x1="12" y1="5" x2="12" y2="19" />
-                          <line x1="5" y1="12" x2="19" y2="12" />
-                        </svg>
-                        <input type="file" accept="image/*" style={{ display: "none" }} onChange={handleUploadImage} />
-                      </label>
-                    ) : (
-                      <div key={i} style={{ borderRadius: 8, background: C.gray50, border: `0.5px solid ${C.border}` }} />
-                    )
-                  ))}
+                {isManager && (
+                  <label
+                    style={{
+                      borderRadius: 12,
+                      border: `1.5px dashed ${C.borderMd}`,
+                      background: C.gray50,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      cursor: "pointer",
+                      aspectRatio: "4 / 3",
+                      minHeight: 120,
+                    }}
+                  >
+                    <svg viewBox="0 0 24 24" style={{ width: 24, height: 24, fill: "none", stroke: C.gray500, strokeWidth: 1.5, strokeLinecap: "round" }}>
+                      <line x1="12" y1="5" x2="12" y2="19" />
+                      <line x1="5" y1="12" x2="19" y2="12" />
+                    </svg>
+                    <input type="file" accept="image/*" style={{ display: "none" }} onChange={handleUploadImage} />
+                  </label>
+                )}
               </div>
             )}
             <p style={{ fontSize: 12, color: C.gray500 }}>

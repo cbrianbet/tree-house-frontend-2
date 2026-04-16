@@ -23,6 +23,7 @@ import Label from "@/components/form/Label";
 import TextArea from "@/components/form/input/TextArea";
 
 import { ROLE_MOVING } from "@/constants/roles";
+import PageLoader from "@/components/ui/PageLoader";
 
 const statusColor: Record<string, "warning" | "info" | "success" | "error" | "primary"> = {
   pending: "warning",
@@ -141,11 +142,7 @@ export default function MovingPage() {
   }
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center py-20">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-brand-500 border-t-transparent" />
-      </div>
-    );
+    return <PageLoader />;
   }
 
   // Company detail view

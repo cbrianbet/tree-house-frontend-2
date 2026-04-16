@@ -7,6 +7,7 @@ import type {
   BidStatus,
   Note,
   MaintenanceImage,
+  MaintenanceTimelineEvent,
 } from "@/types/api";
 
 // ── Requests ──
@@ -42,6 +43,17 @@ export async function updateRequestStatus(
   const res = await api.put<MaintenanceRequest>(
     `/api/maintenance/requests/${id}/`,
     { status },
+  );
+  return res.data;
+}
+
+// ── Timeline ──
+
+export async function getRequestTimeline(
+  requestId: number,
+): Promise<MaintenanceTimelineEvent[]> {
+  const res = await api.get<MaintenanceTimelineEvent[]>(
+    `/api/maintenance/requests/${requestId}/timeline/`,
   );
   return res.data;
 }

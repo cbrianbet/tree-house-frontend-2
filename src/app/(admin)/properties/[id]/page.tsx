@@ -22,7 +22,11 @@ import {
   listTenantReviews,
   createTenantReview,
   deleteTenantReview,
+  listUnitImages,
+  deleteUnitImage,
+  uploadUnitImage,
 } from "@/lib/api/properties";
+import { apiMediaUrl } from "@/lib/api/mediaUrl";
 import {
   listInsights,
   createInsight,
@@ -31,6 +35,7 @@ import { listRequests } from "@/lib/api/maintenance";
 import type {
   Property,
   Unit,
+  UnitImage,
   PropertyAgent,
   UnitCreateRequest,
   Lease,
@@ -49,6 +54,7 @@ import Alert from "@/components/ui/alert/Alert";
 import PropertiesTopHeader from "@/components/properties/PropertiesTopHeader";
 
 import { ROLE_ADMIN, ROLE_TENANT, ROLE_LANDLORD, ROLE_AGENT } from "@/constants/roles";
+import PageLoader from "@/components/ui/PageLoader";
 
 const OSMMapPicker = dynamic(() => import("@/components/properties/OSMMapPicker"), {
   ssr: false,
@@ -95,9 +101,48 @@ export default function PropertyDetailPage() {
   const [maintenance, setMaintenance] = useState<MaintenanceRequest[]>([]);
   const [insightLat, setInsightLat] = useState(-1.2921);
   const [insightLng, setInsightLng] = useState(36.8172);
+  const [propertyImages, setPropertyImages] = useState<UnitImage[]>([]);
+  const [imageAnchorUnitId, setImageAnchorUnitId] = useState<number | null>(null);
+  const [deletingPropertyImageId, setDeletingPropertyImageId] = useState<number | null>(null);
 
   const canManage =
     user && (user.role === ROLE_ADMIN || user.role === ROLE_LANDLORD || user.role === ROLE_AGENT);
+
+  async function refreshPropertyImages(anchorId: number) {
+    try {
+      setPropertyImages(await listUnitImages(anchorId));
+    } catch {
+      setPropertyImages([]);
+    }
+  }
+
+  async function handleDeletePropertyImage(imageId: number) {
+    if (imageAnchorUnitId == null) return;
+    if (!confirm("Remove this photo from the property? It will disappear from public listings for all units here.")) return;
+    setDeletingPropertyImageId(imageId);
+    try {
+      await deleteUnitImage(imageAnchorUnitId, imageId);
+      await refreshPropertyImages(imageAnchorUnitId);
+    } catch {
+      setError("Could not delete image.");
+    } finally {
+      setDeletingPropertyImageId(null);
+    }
+  }
+
+  async function handleUploadPropertyImage(e: React.ChangeEvent<HTMLInputElement>) {
+    if (!e.target.files?.length || imageAnchorUnitId == null) return;
+    const file = e.target.files[0];
+    setSubmitting(true);
+    try {
+      await uploadUnitImage(imageAnchorUnitId, file);
+      await refreshPropertyImages(imageAnchorUnitId);
+    } catch {
+      setError("Image upload failed.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
 
   const fetchAll = useCallback(async () => {
     try {
@@ -112,6 +157,19 @@ export default function PropertyDetailPage() {
       ]);
       setProperty(p);
       setUnits(u);
+      if (u.length > 0) {
+        const anchor = u[0].id;
+        setImageAnchorUnitId(anchor);
+        try {
+          const pi = await listUnitImages(anchor);
+          setPropertyImages(pi);
+        } catch {
+          setPropertyImages([]);
+        }
+      } else {
+        setImageAnchorUnitId(null);
+        setPropertyImages([]);
+      }
       setAgents(a);
       setPropReviews(pr);
       setTenantReviews(tr);
@@ -234,11 +292,7 @@ export default function PropertyDetailPage() {
   }
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center py-20">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-brand-500 border-t-transparent" />
-      </div>
-    );
+    return <PageLoader />;
   }
 
   if (!property) {
@@ -482,6 +536,7 @@ export default function PropertyDetailPage() {
       )}
 
       {activeTab === "info" && (
+        <>
         <div className="grid gap-4 lg:grid-cols-2">
           <InfoSectionCard title="Property Details">
             <InfoRow label="Property type" value={property.property_type ? `${property.property_type} block` : "Apartment block"} />
@@ -535,6 +590,70 @@ export default function PropertyDetailPage() {
             />
           </InfoSectionCard>
         </div>
+
+        <div className="mt-4 rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-800 dark:bg-white/[0.03]">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-semibold text-gray-800 dark:text-white/90">
+                Property photos
+              </h2>
+              <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                Gallery is shared for the whole building (same images appear for every unit). Upload and delete use the image API keyed by unit; this screen uses your first unit as the anchor.
+              </p>
+            </div>
+            {canManage && imageAnchorUnitId != null && (
+              <label className="cursor-pointer rounded-lg bg-brand-500 px-4 py-2 text-sm font-medium text-white hover:bg-brand-600">
+                Upload photo
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleUploadPropertyImage}
+                  disabled={submitting}
+                />
+              </label>
+            )}
+          </div>
+          {imageAnchorUnitId == null ? (
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              Add at least one unit to upload or delete photos.
+            </p>
+          ) : propertyImages.length === 0 ? (
+            <p className="text-sm text-gray-500 dark:text-gray-400">No photos yet.</p>
+          ) : (
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+              {propertyImages.map((img, idx) => (
+                <div
+                  key={img.id}
+                  className="relative aspect-[4/3] overflow-hidden rounded-xl border border-gray-200 bg-gray-100 dark:border-gray-700"
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={apiMediaUrl(img.image)}
+                    alt={`Property ${idx + 1}`}
+                    className="h-full w-full object-cover"
+                  />
+                  {idx === 0 && (
+                    <span className="absolute left-2 top-2 rounded bg-black/60 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">
+                      Hero
+                    </span>
+                  )}
+                  {canManage && (
+                    <button
+                      type="button"
+                      disabled={deletingPropertyImageId === img.id}
+                      onClick={() => handleDeletePropertyImage(img.id)}
+                      className="absolute bottom-2 right-2 rounded-md bg-red-600 px-2 py-1 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-60"
+                    >
+                      {deletingPropertyImageId === img.id ? "…" : "Delete"}
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        </>
       )}
 
 

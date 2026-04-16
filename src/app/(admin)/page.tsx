@@ -37,6 +37,7 @@ import type {
 import Badge from "@/components/ui/badge/Badge";
 import Alert from "@/components/ui/alert/Alert";
 import Link from "next/link";
+import PageLoader from "@/components/ui/PageLoader";
 
 import { ROLE_ADMIN, ROLE_TENANT, ROLE_LANDLORD, ROLE_AGENT, ROLE_ARTISAN, ROLE_MOVING } from "@/constants/roles";
 
@@ -306,11 +307,7 @@ function AdminDash() {
   }
 
   if (loading) {
-    return (
-      <div className="th-admin-dashboard flex justify-center py-20" style={{ background: ADMIN.surface, margin: "-24px -24px 0", minHeight: "60vh" }}>
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-[#0F6E56] border-t-transparent" />
-      </div>
-    );
+    return <PageLoader />;
   }
   if (error) return <Alert variant="error" title="Error" message={error} />;
   if (!data) return null;
@@ -1073,7 +1070,7 @@ function LandlordDash() {
     }
   }
 
-  if (loading) return <Spinner />;
+  if (loading) return <PageLoader />;
   if (error) return <Alert variant="error" title="Error" message={error} />;
   if (!data) return null;
 
@@ -1494,7 +1491,7 @@ function TenantDash() {
       .finally(() => setLoading(false));
   }, []);
 
-  if (loading) return <Spinner />;
+  if (loading) return <PageLoader />;
   if (error) return <Alert variant="error" title="Error" message={error} />;
   if (!data) return null;
 
@@ -1556,7 +1553,7 @@ function AgentDash() {
       .finally(() => setLoading(false));
   }, []);
 
-  if (loading) return <Spinner />;
+  if (loading) return <PageLoader />;
   if (error) return <Alert variant="error" title="Error" message={error} />;
   if (!data) return null;
 
@@ -1605,7 +1602,7 @@ function ArtisanDash() {
       .finally(() => setLoading(false));
   }, []);
 
-  if (loading) return <Spinner />;
+  if (loading) return <PageLoader />;
   if (error) return <Alert variant="error" title="Error" message={error} />;
   if (!data) return null;
 
@@ -1670,7 +1667,7 @@ function MovingDash() {
       .finally(() => setLoading(false));
   }, []);
 
-  if (loading) return <Spinner />;
+  if (loading) return <PageLoader />;
   if (error) return <Alert variant="error" title="Error" message={error} />;
   if (!data) return null;
 
@@ -1714,14 +1711,6 @@ function MovingDash() {
 }
 
 // ── Shared components ──
-
-function Spinner() {
-  return (
-    <div className="flex items-center justify-center py-20">
-      <div className="h-8 w-8 animate-spin rounded-full border-4 border-brand-500 border-t-transparent" />
-    </div>
-  );
-}
 
 function StatCard({ label, value, sub }: { label: string; value: string | number; sub?: string }) {
   return (

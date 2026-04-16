@@ -6,6 +6,7 @@ import type { ModerationReview } from "@/types/api";
 import Badge from "@/components/ui/badge/Badge";
 import Button from "@/components/ui/button/Button";
 import Alert from "@/components/ui/alert/Alert";
+import PageLoader from "@/components/ui/PageLoader";
 
 import { ROLE_ADMIN } from "@/constants/roles";
 
@@ -53,7 +54,7 @@ export default function ModerationPage() {
       {error && <div className="mb-4"><Alert variant="error" title="Error" message={error} /></div>}
 
       {loading ? (
-        <div className="flex justify-center py-10"><div className="h-8 w-8 animate-spin rounded-full border-4 border-brand-500 border-t-transparent" /></div>
+        <PageLoader />
       ) : reviews.length === 0 ? (
         <div className="rounded-2xl border border-gray-200 bg-white p-10 text-center dark:border-gray-800 dark:bg-white/[0.03]">
           <p className="text-gray-400">No reviews to moderate.</p>

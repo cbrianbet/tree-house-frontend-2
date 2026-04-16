@@ -13,6 +13,7 @@ import Button from "@/components/ui/button/Button";
 import Alert from "@/components/ui/alert/Alert";
 import Input from "@/components/form/input/InputField";
 import Label from "@/components/form/Label";
+import PageLoader from "@/components/ui/PageLoader";
 
 import { ROLE_ADMIN } from "@/constants/roles";
 
@@ -177,7 +178,7 @@ export default function AdminUsersPage() {
       </div>
 
       {loading ? (
-        <div className="flex justify-center py-10"><div className="h-8 w-8 animate-spin rounded-full border-4 border-brand-500 border-t-transparent" /></div>
+        <PageLoader />
       ) : users.length === 0 ? (
         <p className="text-gray-400">No users found.</p>
       ) : (

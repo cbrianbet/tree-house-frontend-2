@@ -10,6 +10,7 @@ import type {
   NotificationPreferences,
   TenantInviteAcceptRequest,
   TenantInviteAcceptResponse,
+  UserProfile,
 } from "@/types/api";
 
 export async function login(data: LoginRequest): Promise<AuthTokenResponse> {
@@ -70,6 +71,13 @@ export async function changePassword(data: {
   new_password2: string;
 }): Promise<void> {
   await api.post("/api/auth/password/change/", data);
+}
+
+// ── Lightweight User Profile Lookup ──
+
+export async function getUserProfile(userId: number): Promise<UserProfile> {
+  const res = await api.get<UserProfile>(`/api/auth/users/${userId}/profile/`);
+  return res.data;
 }
 
 // ── Account Self-Service ──

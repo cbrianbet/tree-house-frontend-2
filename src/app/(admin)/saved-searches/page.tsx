@@ -12,6 +12,7 @@ import Badge from "@/components/ui/badge/Badge";
 import Alert from "@/components/ui/alert/Alert";
 import Input from "@/components/form/input/InputField";
 import Label from "@/components/form/Label";
+import PageLoader from "@/components/ui/PageLoader";
 
 export default function SavedSearchesPage() {
   const [tab, setTab] = useState<"search" | "saved">("search");
@@ -221,7 +222,7 @@ export default function SavedSearchesPage() {
         <div>
           {savedError && <div className="mb-4"><Alert variant="error" title="Error" message={savedError} /></div>}
           {savedLoading ? (
-            <div className="flex justify-center py-10"><div className="h-8 w-8 animate-spin rounded-full border-4 border-brand-500 border-t-transparent" /></div>
+            <PageLoader />
           ) : saved.length === 0 ? (
             <div className="rounded-2xl border border-gray-200 bg-white p-10 text-center dark:border-gray-800 dark:bg-white/[0.03]">
               <p className="text-gray-400">No saved searches. Search for units and save your criteria.</p>

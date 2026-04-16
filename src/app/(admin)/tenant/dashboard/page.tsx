@@ -4,11 +4,12 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
 import RoleGuard from "@/components/auth/RoleGuard";
-import type { TenantDashboardFull } from "@/types/api";
+import type { TenantDashboard } from "@/types/api";
 import api from "@/lib/api/client";
+import PageLoader from "@/components/ui/PageLoader";
 
-async function fetchTenantDashboard(): Promise<TenantDashboardFull> {
-  const res = await api.get<TenantDashboardFull>("/api/dashboard/tenant/");
+async function fetchTenantDashboard(): Promise<TenantDashboard> {
+  const res = await api.get<TenantDashboard>("/api/dashboard/tenant/");
   return res.data;
 }
 
@@ -122,29 +123,12 @@ function ActionTile({
   );
 }
 
-// ── Shimmer skeleton ───────────────────────────────────────────────────────────
-function Skeleton() {
-  const sh = (h: number, w?: string) => (
-    <div className="shimmer" style={{ height: h, borderRadius: R, width: w ?? "100%" }} />
-  );
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-      {sh(32, "45%")}
-      {sh(200)}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "12px" }}>
-        {[0,1,2,3].map(i => <div key={i}>{sh(88)}</div>)}
-      </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "12px" }}>
-        {[0,1,2,3].map(i => <div key={i}>{sh(72)}</div>)}
-      </div>
-    </div>
-  );
-}
+// (Skeleton replaced by PageLoader)
 
 // ── Dashboard content ──────────────────────────────────────────────────────────
 function TenantDashboardContent() {
   const { user } = useAuth();
-  const [data, setData]       = useState<TenantDashboardFull | null>(null);
+  const [data, setData]       = useState<TenantDashboard | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState("");
 
@@ -155,7 +139,7 @@ function TenantDashboardContent() {
       .finally(() => setLoading(false));
   }, []);
 
-  if (loading) return <Skeleton />;
+  if (loading) return <PageLoader />;
 
   if (error || !data) {
     return (
@@ -169,11 +153,21 @@ function TenantDashboardContent() {
   }
 
   const lease   = data.active_lease;
-  const days    = lease ? daysRemaining(lease.end_date) : 0;
+  const days    = lease
+    ? (typeof lease.days_remaining === "number"
+        ? lease.days_remaining
+        : daysRemaining(lease.end_date))
+    : 0;
   const elapsed = lease ? leaseElapsed(lease.start_date, lease.end_date) : 0;
   const barColor = elapsed > 90 ? RED : elapsed > 75 ? AMBER : G;
   const daysColor = days < 30 ? RED : days < 90 ? AMBER : G;
-  const inv = data.invoice_summary;
+  const inv = data.invoices ?? {
+    pending: 0,
+    overdue: 0,
+    next_due: null,
+  };
+  const openMaint = data.maintenance?.open_requests ?? 0;
+  const unread = data.notifications?.unread ?? 0;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "20px", paddingBottom: "32px" }}>
@@ -238,14 +232,14 @@ function TenantDashboardContent() {
               </div>
               <div>
                 <h2 style={{ fontSize: "18px", fontWeight: 500, color: GRAY900, margin: "0 0 4px" }}>
-                  {lease.unit.property.name}
+                  {lease.property}
                 </h2>
                 <div style={{ display: "flex", alignItems: "center", gap: "5px", color: GRAY500, fontSize: "12px" }}>
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
                     <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5A2.5 2.5 0 019.5 9 2.5 2.5 0 0112 6.5 2.5 2.5 0 0114.5 9 2.5 2.5 0 0112 11.5z"
                       stroke="currentColor" strokeWidth="1.5" fill="none"/>
                   </svg>
-                  {lease.unit.property.address}
+                  Your rental home
                 </div>
               </div>
             </div>
@@ -254,7 +248,7 @@ function TenantDashboardContent() {
               borderRadius: "20px", padding: "5px 12px",
               fontSize: "12px", fontWeight: 500, color: G700, flexShrink: 0,
             }}>
-              Unit {lease.unit.unit_number}
+              Unit {lease.unit}
             </div>
           </div>
 
@@ -310,36 +304,86 @@ function TenantDashboardContent() {
         </div>
       )}
 
-      {/* ── Invoice summary ── */}
+      {/* ── Invoice & activity summary ── */}
       <div>
         <div style={{ fontSize: "11px", fontWeight: 500, color: GRAY500, textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: "10px" }}>
-          Invoice summary
+          Invoices & activity
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "12px" }}>
           <StatCard
-            label="Total"      value={inv.total_invoices}
-            sub="all time"     bg="#fff" color={GRAY700} border={GRAY200}
+            label="Pending"
+            value={inv.pending}
+            sub="awaiting payment"
+            bg={AMBER50}
+            color={AMBER800}
+            border={AMBER}
             delay={0.10}
           />
           <StatCard
-            label="Paid"       value={inv.paid}
-            sub="invoices"     bg={G50} color={G700} border={G100}
-            delay={0.13}
-          />
-          <StatCard
-            label="Pending"    value={inv.pending}
-            sub="awaiting payment" bg={AMBER50} color={AMBER800} border={AMBER}
-            delay={0.16}
-          />
-          <StatCard
-            label="Overdue"    value={inv.overdue}
+            label="Overdue"
+            value={inv.overdue}
             sub={inv.overdue > 0 ? "action needed" : "all clear"}
             bg={inv.overdue > 0 ? RED50 : GRAY50}
             color={inv.overdue > 0 ? RED : GRAY500}
             border={inv.overdue > 0 ? RED300 : GRAY200}
+            delay={0.13}
+          />
+          <StatCard
+            label="Open maintenance"
+            value={openMaint}
+            sub={openMaint > 0 ? "requests" : "none open"}
+            bg={openMaint > 0 ? AMBER50 : G50}
+            color={openMaint > 0 ? AMBER800 : G700}
+            border={openMaint > 0 ? AMBER : G100}
+            delay={0.16}
+          />
+          <StatCard
+            label="Notifications"
+            value={unread}
+            sub={unread > 0 ? "unread" : "inbox clear"}
+            bg={unread > 0 ? G50 : GRAY50}
+            color={unread > 0 ? G700 : GRAY500}
+            border={unread > 0 ? G100 : GRAY200}
             delay={0.19}
           />
         </div>
+        {inv.next_due && (
+          <div style={{
+            marginTop: "12px",
+            background: "#fff",
+            border: BORDER,
+            borderRadius: R,
+            padding: "14px 18px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            flexWrap: "wrap",
+            gap: "10px",
+          }}>
+            <div>
+              <div style={{ fontSize: "11px", fontWeight: 500, color: GRAY500, textTransform: "uppercase", letterSpacing: "0.4px" }}>
+                Next invoice due
+              </div>
+              <div style={{ fontSize: "14px", fontWeight: 500, color: GRAY900, marginTop: "4px" }}>
+                KES {Number(inv.next_due.amount).toLocaleString("en-KE")}{" "}
+                <span style={{ fontSize: "12px", fontWeight: 400, color: GRAY500 }}>
+                  · due {fmt(inv.next_due.due_date)}
+                </span>
+              </div>
+            </div>
+            <Link href="/billing" style={{
+              background: G,
+              color: "#fff",
+              borderRadius: "8px",
+              padding: "8px 14px",
+              fontSize: "12px",
+              fontWeight: 500,
+              textDecoration: "none",
+            }}>
+              View billing
+            </Link>
+          </div>
+        )}
       </div>
 
       {/* ── Quick actions ── */}
@@ -365,7 +409,7 @@ function TenantDashboardContent() {
             href="/maintenance"
             label="Report an issue"
             sub="Submit a maintenance request"
-            badge={data.open_maintenance}
+            badge={openMaint}
             delay={0.25}
             icon={
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none">

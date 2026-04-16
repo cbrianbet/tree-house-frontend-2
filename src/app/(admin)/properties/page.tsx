@@ -6,6 +6,7 @@ import { useAuth } from "@/context/AuthContext";
 import { listProperties, listUnits } from "@/lib/api/properties";
 import type { Property, Unit } from "@/types/api";
 import { ROLE_ADMIN, ROLE_LANDLORD } from "@/constants/roles";
+import PageLoader from "@/components/ui/PageLoader";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -100,12 +101,7 @@ export default function PropertiesPage() {
   const canManage = user && [ROLE_ADMIN, ROLE_LANDLORD].includes(user.role);
 
   if (loading) {
-    return (
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: "80px 0" }}>
-        <div style={{ width: 32, height: 32, borderRadius: "50%", border: "3px solid #E8E7E1", borderTopColor: "#0F6E56", animation: "spin 0.8s linear infinite" }} />
-        <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
-      </div>
-    );
+    return <PageLoader />;
   }
 
   return (

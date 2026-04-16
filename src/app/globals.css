@@ -417,3 +417,13 @@
   opacity: 0.8;
   cursor: grabbing; /* Changes the cursor to indicate dragging */
 }
+
+/* Treehouse finance / operations mocks — form control focus */
+.th-finance-field:focus {
+  border-color: #1d9e75;
+  background-color: #ffffff;
+}
+.th-finance-field:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}

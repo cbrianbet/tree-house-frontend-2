@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
+import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
 import {
   listApplications,
@@ -21,6 +22,7 @@ import {
   ROLE_TENANT,
   ROLE_AGENT,
 } from "@/constants/roles";
+import PageLoader from "@/components/ui/PageLoader";
 
 // ── Design tokens ──────────────────────────────────────────────────────────────
 const G = "#0F6E56";
@@ -388,21 +390,30 @@ export default function ApplicationsPage() {
 
       <div style={{ fontFamily: "'DM Sans', sans-serif", color: GRAY900, minHeight: "100vh", background: GRAY50 }}>
 
-        {/* Topbar */}
-        <div style={{
-          background: "#fff", borderBottom: BORDER,
-          padding: "0 28px", height: "56px",
-          display: "flex", alignItems: "center", justifyContent: "space-between",
-          position: "sticky", top: 0, zIndex: 50,
-        }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "13px" }}>
-            <span style={{ color: GRAY500 }}>Dashboard</span>
-            <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-              <path d="M4 2l4 4-4 4" stroke={GRAY400} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+        {/* Top bar — same chrome as /tenant (bleed, breadcrumb, no sticky) */}
+        <div
+          className="-mx-4 -mt-4 md:-mx-6 md:-mt-6"
+          style={{
+            background: "#fff",
+            borderBottom: "0.5px solid rgba(0,0,0,0.07)",
+            padding: "12px 24px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            flexWrap: "wrap",
+            gap: 12,
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: GRAY500 }}>
+            <Link href="/" style={{ color: GRAY500, textDecoration: "none" }}>
+              Dashboard
+            </Link>
+            <svg width={12} height={12} viewBox="0 0 12 12" fill="none" stroke={GRAY500} strokeWidth={2} strokeLinecap="round">
+              <polyline points="4,2 8,6 4,10" />
             </svg>
             <span style={{ color: GRAY900, fontWeight: 500 }}>Applications</span>
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             {counts.pending > 0 && (
               <div style={{
                 background: AMBER50, color: AMBER800,
@@ -416,7 +427,7 @@ export default function ApplicationsPage() {
           </div>
         </div>
 
-        <div style={{ padding: "28px", maxWidth: "1200px" }}>
+        <div style={{ paddingTop: 22, paddingBottom: 24, maxWidth: "1200px" }}>
 
           {/* Header */}
           <div style={{ marginBottom: "24px" }}>
@@ -510,15 +521,7 @@ export default function ApplicationsPage() {
 
             {/* Content */}
             {loading ? (
-              <div style={{ padding: "60px", textAlign: "center" }}>
-                <div style={{
-                  width: "36px", height: "36px", border: `3px solid ${GRAY200}`,
-                  borderTopColor: G, borderRadius: "50%", margin: "0 auto",
-                  animation: "spin 0.8s linear infinite",
-                }}/>
-                <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-                <div style={{ marginTop: "12px", fontSize: "13px", color: GRAY500 }}>Loading applications…</div>
-              </div>
+              <PageLoader />
             ) : error ? (
               <div style={{ padding: "40px", textAlign: "center" }}>
                 <div style={{ fontSize: "13px", color: RED, marginBottom: "12px" }}>{error}</div>

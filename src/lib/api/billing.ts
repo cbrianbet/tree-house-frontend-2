@@ -1,10 +1,16 @@
 import api from "./client";
 import type {
   BillingConfig,
+  BillingConfigPayload,
+  BillingPreview,
   Invoice,
+  InvoiceCreateRequest,
   PayInvoiceResponse,
   Receipt,
   ChargeType,
+  ChargeTypeCreateRequest,
+  Payment,
+  ManualPaymentResponse,
   AdditionalIncome,
   AdditionalIncomeCreateRequest,
   Expense,
@@ -25,11 +31,20 @@ export async function getBillingConfig(
 
 export async function saveBillingConfig(
   propertyId: number,
-  data: BillingConfig,
+  data: BillingConfigPayload,
 ): Promise<BillingConfig> {
   const res = await api.post<BillingConfig>(
     `/api/billing/config/${propertyId}/`,
     data,
+  );
+  return res.data;
+}
+
+export async function getBillingPreview(
+  propertyId: number,
+): Promise<BillingPreview> {
+  const res = await api.get<BillingPreview>(
+    `/api/billing/properties/${propertyId}/billing-preview/`,
   );
   return res.data;
 }
@@ -46,13 +61,35 @@ export async function getInvoice(id: number): Promise<Invoice> {
   return res.data;
 }
 
-export async function payInvoice(
-  id: number,
-  amount?: string,
-): Promise<PayInvoiceResponse> {
+export async function createInvoice(data: InvoiceCreateRequest): Promise<Invoice> {
+  const res = await api.post<Invoice>("/api/billing/invoices/", data);
+  return res.data;
+}
+
+export async function payInvoice(id: number): Promise<PayInvoiceResponse> {
   const res = await api.post<PayInvoiceResponse>(
     `/api/billing/invoices/${id}/pay/`,
-    amount ? { amount } : undefined,
+    {},
+  );
+  return res.data;
+}
+
+export async function listInvoicePayments(
+  invoiceId: number,
+): Promise<Payment[]> {
+  const res = await api.get<Payment[]>(
+    `/api/billing/invoices/${invoiceId}/payments/`,
+  );
+  return res.data;
+}
+
+export async function recordManualPayment(
+  invoiceId: number,
+  amount: string,
+): Promise<ManualPaymentResponse> {
+  const res = await api.post<ManualPaymentResponse>(
+    `/api/billing/invoices/${invoiceId}/payments/`,
+    { amount },
   );
   return res.data;
 }
@@ -73,20 +110,23 @@ export async function getReceipt(id: number): Promise<Receipt> {
 
 export async function listChargeTypes(
   propertyId: number,
+  options?: { includeInactive?: boolean },
 ): Promise<ChargeType[]> {
-  const res = await api.get<ChargeType[]>(
-    `/api/billing/properties/${propertyId}/charge-types/`,
-  );
+  const path =
+    options?.includeInactive === true
+      ? `/api/billing/properties/${propertyId}/charge-types/?include_inactive=1`
+      : `/api/billing/properties/${propertyId}/charge-types/`;
+  const res = await api.get<ChargeType[]>(path);
   return res.data;
 }
 
 export async function createChargeType(
   propertyId: number,
-  name: string,
+  data: ChargeTypeCreateRequest,
 ): Promise<ChargeType> {
   const res = await api.post<ChargeType>(
     `/api/billing/properties/${propertyId}/charge-types/`,
-    { name },
+    data,
   );
   return res.data;
 }
@@ -94,11 +134,11 @@ export async function createChargeType(
 export async function updateChargeType(
   propertyId: number,
   id: number,
-  name: string,
+  data: Partial<ChargeTypeCreateRequest>,
 ): Promise<ChargeType> {
   const res = await api.put<ChargeType>(
     `/api/billing/properties/${propertyId}/charge-types/${id}/`,
-    { name },
+    data,
   );
   return res.data;
 }
@@ -129,6 +169,18 @@ export async function createAdditionalIncome(
 ): Promise<AdditionalIncome> {
   const res = await api.post<AdditionalIncome>(
     `/api/billing/properties/${propertyId}/additional-income/`,
+    data,
+  );
+  return res.data;
+}
+
+export async function updateAdditionalIncome(
+  propertyId: number,
+  id: number,
+  data: Partial<Pick<AdditionalIncomeCreateRequest, "amount" | "date" | "description">>,
+): Promise<AdditionalIncome> {
+  const res = await api.put<AdditionalIncome>(
+    `/api/billing/properties/${propertyId}/additional-income/${id}/`,
     data,
   );
   return res.data;

@@ -1,5 +1,7 @@
 "use client";
-import React, { useEffect, useState, FormEvent } from "react";
+
+import React, { useEffect, useMemo, useState, FormEvent } from "react";
+import { DM_Mono, DM_Sans } from "next/font/google";
 import { useAuth } from "@/context/AuthContext";
 import {
   listDisputes,
@@ -9,35 +11,100 @@ import {
   listDisputeMessages,
   postDisputeMessage,
 } from "@/lib/api/disputes";
-import { listProperties } from "@/lib/api/properties";
-import type { Dispute, DisputeMessage, DisputeType, Property } from "@/types/api";
-import Badge from "@/components/ui/badge/Badge";
-import Button from "@/components/ui/button/Button";
+import { listProperties, listUnits } from "@/lib/api/properties";
+import type { Dispute, DisputeMessage, DisputeType, Property, Unit } from "@/types/api";
 import Alert from "@/components/ui/alert/Alert";
-import Input from "@/components/form/input/InputField";
-import Label from "@/components/form/Label";
-import TextArea from "@/components/form/input/TextArea";
+import {
+  FD,
+  FINANCE_FIELD_CLASS,
+  financeFieldInputStyle,
+  financeFieldLabelStyle,
+  financeFieldSelectStyle,
+  financeFieldTextAreaStyle,
+  financeGbtn,
+  financePbtn,
+} from "@/constants/financeDesign";
+import { FinancePageTopBar } from "@/components/finance/FinancePageTopBar";
 
 import { ROLE_ADMIN, ROLE_TENANT, ROLE_LANDLORD } from "@/constants/roles";
+import PageLoader from "@/components/ui/PageLoader";
 
-const statusColor: Record<string, "warning" | "info" | "success" | "error" | "primary"> = {
-  open: "warning",
-  under_review: "info",
-  resolved: "success",
-  closed: "primary",
+const dmSans = DM_Sans({ weight: ["400", "500"], subsets: ["latin"], display: "swap" });
+const dmMono = DM_Mono({ weight: ["400", "500"], subsets: ["latin"], display: "swap" });
+
+const disputeTypes: DisputeType[] = ["rent", "maintenance", "noise", "damage", "lease", "other"];
+
+function disputeStatusStyle(status: string): { bg: string; color: string; label: string } {
+  switch (status) {
+    case "open":
+      return { bg: FD.r0, color: FD.r6, label: "Open" };
+    case "under_review":
+      return { bg: FD.a0, color: FD.a7, label: "Mediation" };
+    case "resolved":
+      return { bg: FD.g1, color: FD.activeBadgeText, label: "Resolved" };
+    case "closed":
+      return { bg: FD.k0, color: FD.k5, label: "Closed" };
+    default:
+      return { bg: FD.k0, color: FD.k5, label: status.replace(/_/g, " ") };
+  }
+}
+
+function disputeTypeBadge(t: string): { bg: string; color: string; label: string } {
+  const label = t.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+  switch (t) {
+    case "maintenance":
+      return { bg: "#F3E8FF", color: "#4B0082", label };
+    case "rent":
+      return { bg: FD.r0, color: FD.r6, label };
+    case "noise":
+      return { bg: FD.b0, color: FD.b8, label };
+    default:
+      return { bg: FD.a0, color: FD.a7, label };
+  }
+}
+
+function StatusBadge({ status }: { status: string }) {
+  const s = disputeStatusStyle(status);
+  return (
+    <span
+      style={{
+        background: s.bg,
+        color: s.color,
+        borderRadius: 20,
+        padding: "2px 10px",
+        fontSize: 11,
+        fontWeight: 500,
+        display: "inline-flex",
+        alignItems: "center",
+      }}
+    >
+      {s.label}
+    </span>
+  );
+}
+
+const card: React.CSSProperties = {
+  border: `0.5px solid ${FD.bd}`,
+  borderRadius: FD.rlg,
+  backgroundColor: FD.wh,
+  padding: "16px 18px",
+  marginBottom: 14,
 };
 
-const disputeTypes: DisputeType[] = [
-  "rent",
-  "maintenance",
-  "noise",
-  "damage",
-  "lease",
-  "other",
-];
+const cardTitle: React.CSSProperties = {
+  fontSize: 11,
+  fontWeight: 500,
+  letterSpacing: ".4px",
+  textTransform: "uppercase",
+  color: FD.k5,
+  marginBottom: 12,
+};
 
 export default function DisputesPage() {
   const { user } = useAuth();
+  const sans = dmSans.style.fontFamily;
+  const mono = dmMono.style.fontFamily;
+
   const [disputes, setDisputes] = useState<Dispute[]>([]);
   const [properties, setProperties] = useState<Property[]>([]);
   const [loading, setLoading] = useState(true);
@@ -45,25 +112,41 @@ export default function DisputesPage() {
   const [success, setSuccess] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [createPropertyId, setCreatePropertyId] = useState("");
+  const [createUnits, setCreateUnits] = useState<Unit[]>([]);
+  const [unitsLoading, setUnitsLoading] = useState(false);
+  const [detailPropertyLabel, setDetailPropertyLabel] = useState<string>("");
+  const [detailUnitLabel, setDetailUnitLabel] = useState<string>("");
+  const [unitsByProperty, setUnitsByProperty] = useState<Record<number, Unit[]>>({});
+  const [statusTabFilter, setStatusTabFilter] = useState<string>("all");
 
-  // Detail view state
   const [activeDispute, setActiveDispute] = useState<Dispute | null>(null);
   const [disputeMessages, setDisputeMessages] = useState<DisputeMessage[]>([]);
   const [msgLoading, setMsgLoading] = useState(false);
   const [newMsg, setNewMsg] = useState("");
 
   const canCreate =
-    user?.role === ROLE_ADMIN ||
-    user?.role === ROLE_TENANT ||
-    user?.role === ROLE_LANDLORD;
+    user?.role === ROLE_ADMIN || user?.role === ROLE_TENANT || user?.role === ROLE_LANDLORD;
+
+  const stats = useMemo(() => {
+    const open = disputes.filter((d) => d.status === "open").length;
+    const review = disputes.filter((d) => d.status === "under_review").length;
+    const done = disputes.filter((d) => d.status === "resolved" || d.status === "closed").length;
+    return { open, review, done };
+  }, [disputes]);
+
+  const filteredDisputes = useMemo(() => {
+    if (statusTabFilter === "all") return disputes;
+    if (statusTabFilter === "open") return disputes.filter((d) => d.status === "open");
+    if (statusTabFilter === "in_progress") return disputes.filter((d) => d.status === "under_review");
+    if (statusTabFilter === "resolved") return disputes.filter((d) => d.status === "resolved" || d.status === "closed");
+    return disputes;
+  }, [disputes, statusTabFilter]);
 
   useEffect(() => {
     async function load() {
       try {
-        const [d, p] = await Promise.all([
-          listDisputes(),
-          canCreate ? listProperties() : Promise.resolve([]),
-        ]);
+        const [d, p] = await Promise.all([listDisputes(), listProperties().catch(() => [])]);
         setDisputes(d);
         setProperties(p);
       } catch {
@@ -73,7 +156,59 @@ export default function DisputesPage() {
       }
     }
     load();
-  }, [canCreate]);
+  }, []);
+
+  useEffect(() => {
+    const ids = [...new Set(disputes.map((d) => d.property))];
+    if (ids.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      const entries = await Promise.all(
+        ids.map(async (propertyId) => {
+          try {
+            return [propertyId, await listUnits(propertyId)] as const;
+          } catch {
+            return [propertyId, [] as Unit[]] as const;
+          }
+        })
+      );
+      if (cancelled) return;
+      setUnitsByProperty((prev) => {
+        const next = { ...prev };
+        for (const [pid, units] of entries) next[pid] = units;
+        return next;
+      });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [disputes]);
+
+  useEffect(() => {
+    if (!showCreate || properties.length === 0) return;
+    if (!createPropertyId) {
+      setCreatePropertyId(String(properties[0].id));
+    }
+  }, [showCreate, properties, createPropertyId]);
+
+  useEffect(() => {
+    async function loadUnits() {
+      if (!showCreate || !createPropertyId) {
+        setCreateUnits([]);
+        return;
+      }
+      setUnitsLoading(true);
+      try {
+        const units = await listUnits(Number(createPropertyId));
+        setCreateUnits(units);
+      } catch {
+        setCreateUnits([]);
+      } finally {
+        setUnitsLoading(false);
+      }
+    }
+    loadUnits();
+  }, [showCreate, createPropertyId]);
 
   async function handleCreate(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -82,7 +217,7 @@ export default function DisputesPage() {
     const fd = new FormData(e.currentTarget);
     try {
       const dispute = await createDispute({
-        property: parseInt(fd.get("property") as string, 10),
+        property: Number(createPropertyId || fd.get("property")),
         unit: fd.get("unit") ? parseInt(fd.get("unit") as string, 10) : undefined,
         dispute_type: fd.get("dispute_type") as DisputeType,
         title: fd.get("title") as string,
@@ -102,12 +237,26 @@ export default function DisputesPage() {
     setMsgLoading(true);
     setError(null);
     try {
-      const [d, msgs] = await Promise.all([
-        getDispute(id),
-        listDisputeMessages(id),
-      ]);
+      const [d, msgs] = await Promise.all([getDispute(id), listDisputeMessages(id)]);
       setActiveDispute(d);
       setDisputeMessages(msgs);
+      const selectedProperty = properties.find((p) => p.id === d.property);
+      setDetailPropertyLabel(selectedProperty?.name ?? `Property #${d.property}`);
+      if (d.unit != null) {
+        let units = unitsByProperty[d.property];
+        if (!units?.length) {
+          try {
+            units = await listUnits(d.property);
+            setUnitsByProperty((prev) => ({ ...prev, [d.property]: units! }));
+          } catch {
+            units = [];
+          }
+        }
+        const selectedUnit = units.find((u) => u.id === d.unit);
+        setDetailUnitLabel(selectedUnit?.name ?? `Unit #${d.unit}`);
+      } else {
+        setDetailUnitLabel("");
+      }
     } catch {
       setError("Failed to load dispute details.");
     } finally {
@@ -121,9 +270,7 @@ export default function DisputesPage() {
     try {
       const updated = await updateDisputeStatus(activeDispute.id, status);
       setActiveDispute(updated);
-      setDisputes((prev) =>
-        prev.map((d) => (d.id === updated.id ? updated : d)),
-      );
+      setDisputes((prev) => prev.map((d) => (d.id === updated.id ? updated : d)));
       setSuccess(`Dispute marked as ${status.replace("_", " ")}.`);
     } catch {
       setError("Failed to update dispute.");
@@ -148,294 +295,813 @@ export default function DisputesPage() {
   }
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center py-20">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-brand-500 border-t-transparent" />
-      </div>
-    );
+    return <PageLoader />;
   }
 
-  // Detail view
+  // ── DETAIL VIEW ───────────────────────────────────────────────────────────
   if (activeDispute) {
     const canMoveToReview =
       activeDispute.status === "open" &&
       (user?.role === ROLE_ADMIN || user?.role === ROLE_LANDLORD);
-    const canResolve =
-      activeDispute.status === "under_review" && user?.role === ROLE_ADMIN;
+    const canResolve = activeDispute.status === "under_review" && user?.role === ROLE_ADMIN;
     const canClose =
       (activeDispute.status === "open" || activeDispute.status === "under_review") &&
       activeDispute.created_by === user?.pk;
 
+    const detailTitleShort =
+      activeDispute.title.length > 40
+        ? `${activeDispute.title.slice(0, 40)}…`
+        : activeDispute.title;
+
     return (
-      <div>
-        <button
-          onClick={() => setActiveDispute(null)}
-          className="mb-4 text-sm text-brand-500 hover:text-brand-600"
-        >
-          &larr; Back to disputes
-        </button>
-
-        {error && (
-          <div className="mb-4">
-            <Alert variant="error" title="Error" message={error} />
-          </div>
-        )}
-        {success && (
-          <div className="mb-4">
-            <Alert variant="success" title="Success" message={success} />
-          </div>
-        )}
-
-        <div className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-800 dark:bg-white/[0.03]">
-          <div className="flex items-start justify-between">
-            <div>
-              <h1 className="text-xl font-semibold text-gray-800 dark:text-white/90">
-                {activeDispute.title}
-              </h1>
-              <div className="mt-2 flex gap-2">
-                <Badge
-                  variant="light"
-                  size="sm"
-                  color={statusColor[activeDispute.status] ?? "primary"}
-                >
-                  {activeDispute.status.replace("_", " ")}
-                </Badge>
-                <Badge variant="light" size="sm" color="primary">
-                  {activeDispute.dispute_type}
-                </Badge>
-              </div>
-            </div>
-            <div className="flex gap-2">
+      <div
+        className={`${dmSans.className} -m-4 md:-m-6`}
+        style={{
+          fontFamily: sans,
+          background: FD.surf,
+          color: FD.k9,
+          fontSize: 14,
+          minHeight: "calc(100vh - 80px)",
+        }}
+      >
+        <FinancePageTopBar
+          crumbs={[
+            { label: "Dashboard", href: "/" },
+            { label: "Disputes", onClick: () => setActiveDispute(null) },
+            { label: `DSP-${activeDispute.id} — ${detailTitleShort}` },
+          ]}
+          right={
+            <>
+              <button
+                type="button"
+                onClick={() => setActiveDispute(null)}
+                className="transition-colors hover:bg-[#F2F1EB]"
+                style={financeGbtn(sans)}
+              >
+                ← Back to disputes
+              </button>
               {canMoveToReview && (
-                <Button
-                  size="sm"
-                  variant="outline"
+                <button
+                  type="button"
                   disabled={submitting}
                   onClick={() => handleStatusChange("under_review")}
+                  className="transition-colors hover:bg-[#085041]"
+                  style={{ ...financePbtn(sans), opacity: submitting ? 0.65 : 1 }}
                 >
-                  Move to Review
-                </Button>
+                  Start mediation
+                </button>
               )}
               {canResolve && (
-                <Button
-                  size="sm"
+                <button
+                  type="button"
                   disabled={submitting}
                   onClick={() => handleStatusChange("resolved")}
+                  className="transition-colors hover:bg-[#085041]"
+                  style={{ ...financePbtn(sans), opacity: submitting ? 0.65 : 1 }}
                 >
-                  Resolve
-                </Button>
+                  Mark resolved
+                </button>
               )}
               {canClose && (
-                <Button
-                  size="sm"
-                  variant="outline"
+                <button
+                  type="button"
                   disabled={submitting}
                   onClick={() => handleStatusChange("closed")}
+                  className="transition-colors hover:bg-[#F2F1EB]"
+                  style={{ ...financeGbtn(sans), opacity: submitting ? 0.65 : 1 }}
                 >
-                  Close
-                </Button>
+                  Close dispute
+                </button>
               )}
+            </>
+          }
+        />
+
+        <div style={{ padding: "22px 24px" }}>
+          {error && (
+            <div style={{ marginBottom: 14 }}>
+              <Alert variant="error" title="Error" message={error} />
+            </div>
+          )}
+          {success && (
+            <div style={{ marginBottom: 14 }}>
+              <Alert variant="success" title="Success" message={success} />
+            </div>
+          )}
+
+          {/* Dispute hero */}
+          <div
+            style={{
+              background: FD.wh,
+              border: `0.5px solid ${FD.bd}`,
+              borderLeft: `4px solid ${FD.a5}`,
+              borderRadius: FD.rxl,
+              padding: "20px 22px",
+              marginBottom: 16,
+            }}
+          >
+            <div style={{ fontSize: 11, color: FD.k5, fontFamily: mono, marginBottom: 4 }}>
+              DSP-{activeDispute.id} · {disputeTypeBadge(activeDispute.dispute_type).label} · Raised{" "}
+              {new Date(activeDispute.created_at).toLocaleDateString("en-GB", {
+                day: "numeric",
+                month: "short",
+                year: "numeric",
+              })}
+            </div>
+            <div style={{ fontSize: 18, fontWeight: 500, color: FD.k9, marginBottom: 4 }}>
+              {activeDispute.title}
+            </div>
+            <div style={{ fontSize: 13, color: FD.k5 }}>
+              {activeDispute.unit != null
+                ? `${detailUnitLabel || `Unit #${activeDispute.unit}`} · `
+                : ""}
+              {detailPropertyLabel || `Property #${activeDispute.property}`}
             </div>
           </div>
 
-          <p className="mt-4 text-sm text-gray-600 dark:text-gray-400">
-            {activeDispute.description}
-          </p>
-          <p className="mt-2 text-xs text-gray-400">
-            Property #{activeDispute.property}
-            {activeDispute.unit && ` · Unit #${activeDispute.unit}`}
-            {" · "}Created {new Date(activeDispute.created_at).toLocaleDateString()}
-          </p>
-        </div>
-
-        {/* Messages */}
-        <div className="mt-4 rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-white/[0.03]">
-          <div className="border-b border-gray-100 p-4 dark:border-gray-700">
-            <h3 className="font-semibold text-gray-800 dark:text-white/90">
-              Discussion
-            </h3>
-          </div>
-          <div className="max-h-80 overflow-y-auto p-4 space-y-3">
-            {msgLoading ? (
-              <div className="flex justify-center py-4">
-                <div className="h-6 w-6 animate-spin rounded-full border-3 border-brand-500 border-t-transparent" />
-              </div>
-            ) : disputeMessages.length === 0 ? (
-              <p className="text-center text-sm text-gray-400">
-                No messages yet.
-              </p>
-            ) : (
-              disputeMessages.map((msg) => (
-                <div
-                  key={msg.id}
-                  className="rounded-xl bg-gray-50 p-3 dark:bg-gray-800/50"
-                >
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium text-gray-800 dark:text-white/90">
-                      {msg.sender_name}
-                    </span>
-                    <span className="text-xs text-gray-400">
-                      {new Date(msg.created_at).toLocaleString()}
-                    </span>
-                  </div>
-                  <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
-                    {msg.body}
-                  </p>
-                </div>
-              ))
-            )}
-          </div>
-          {activeDispute.status !== "resolved" &&
-            activeDispute.status !== "closed" && (
-              <form
-                onSubmit={handleSendMessage}
-                className="border-t border-gray-100 p-4 dark:border-gray-700"
+          {/* Two-column layout */}
+          <div
+            style={{ display: "grid", gridTemplateColumns: "1fr 300px", gap: 14 }}
+            className="max-lg:grid-cols-1"
+          >
+            {/* Left: Discussion */}
+            <div>
+              <div
+                style={{
+                  background: FD.wh,
+                  border: `0.5px solid ${FD.bd}`,
+                  borderRadius: FD.rlg,
+                  overflow: "hidden",
+                }}
               >
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={newMsg}
-                    onChange={(e) => setNewMsg(e.target.value)}
-                    placeholder="Add a message…"
-                    className="flex-1 rounded-lg border border-gray-200 bg-transparent px-4 py-2.5 text-sm text-gray-800 placeholder:text-gray-400 focus:border-brand-300 focus:outline-none focus:ring focus:ring-brand-500/10 dark:border-gray-700 dark:text-white/90 dark:placeholder:text-white/30"
-                  />
-                  <Button size="sm" disabled={submitting || !newMsg.trim()}>
-                    Send
-                  </Button>
+                <div
+                  style={{
+                    padding: "14px 18px",
+                    borderBottom: `0.5px solid ${FD.bd}`,
+                    ...cardTitle,
+                    marginBottom: 0,
+                  }}
+                >
+                  Correspondence
                 </div>
-              </form>
-            )}
+                <div style={{ maxHeight: 360, overflowY: "auto", padding: "14px 18px" }}>
+                  {msgLoading ? (
+                    <div className="flex justify-center py-6">
+                      <div className="h-6 w-6 animate-spin rounded-full border-2 border-brand-500 border-t-transparent" />
+                    </div>
+                  ) : disputeMessages.length === 0 ? (
+                    <p style={{ textAlign: "center", fontSize: 13, color: FD.k5 }}>
+                      No messages yet.
+                    </p>
+                  ) : (
+                    disputeMessages.map((msg) => {
+                      const mine = user?.pk === msg.sender;
+                      return (
+                        <div
+                          key={msg.id}
+                          style={{
+                            padding: "10px 12px",
+                            borderRadius: FD.rmd,
+                            marginBottom: 8,
+                            fontSize: 13,
+                            lineHeight: 1.5,
+                            background: mine ? FD.g1 : FD.k0,
+                            borderBottomLeftRadius: mine ? 8 : 2,
+                            borderBottomRightRadius: mine ? 2 : 8,
+                            textAlign: mine ? "right" : "left",
+                          }}
+                        >
+                          <div
+                            style={{
+                              fontSize: 10,
+                              color: FD.k5,
+                              marginBottom: 3,
+                              fontWeight: 500,
+                            }}
+                          >
+                            {msg.sender_name}
+                          </div>
+                          {msg.body}
+                          <div
+                            style={{
+                              fontSize: 10,
+                              color: FD.k5,
+                              marginTop: 3,
+                              fontFamily: mono,
+                            }}
+                          >
+                            {new Date(msg.created_at).toLocaleString()}
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+                {activeDispute.status !== "resolved" && activeDispute.status !== "closed" && (
+                  <form
+                    onSubmit={handleSendMessage}
+                    style={{
+                      display: "flex",
+                      gap: 8,
+                      padding: "14px 18px",
+                      borderTop: `0.5px solid ${FD.bd}`,
+                    }}
+                  >
+                    <input
+                      type="text"
+                      value={newMsg}
+                      onChange={(e) => setNewMsg(e.target.value)}
+                      placeholder="Write a reply…"
+                      className={FINANCE_FIELD_CLASS}
+                      style={{
+                        ...financeFieldInputStyle({ fontFamily: sans }),
+                        flex: 1,
+                        width: "auto",
+                      }}
+                    />
+                    <button
+                      type="submit"
+                      disabled={submitting || !newMsg.trim()}
+                      style={{
+                        ...financePbtn(sans),
+                        height: 38,
+                        cursor: submitting || !newMsg.trim() ? "not-allowed" : "pointer",
+                        opacity: submitting || !newMsg.trim() ? 0.6 : 1,
+                      }}
+                    >
+                      Send
+                    </button>
+                  </form>
+                )}
+              </div>
+            </div>
+
+            {/* Right: Case details */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              <div style={{ ...card, marginBottom: 0 }}>
+                <div style={cardTitle}>Dispute details</div>
+                {[
+                  { k: "Dispute ID", v: `DSP-${activeDispute.id}`, mono: true },
+                  { k: "Type", v: disputeTypeBadge(activeDispute.dispute_type).label },
+                  {
+                    k: "Property",
+                    v: detailPropertyLabel || `Property #${activeDispute.property}`,
+                  },
+                  {
+                    k: "Unit",
+                    v:
+                      activeDispute.unit != null
+                        ? detailUnitLabel || `Unit #${activeDispute.unit}`
+                        : "—",
+                  },
+                  { k: "Status", badge: true },
+                  {
+                    k: "Raised",
+                    v: new Date(activeDispute.created_at).toLocaleDateString("en-GB", {
+                      day: "numeric",
+                      month: "short",
+                      year: "numeric",
+                    }),
+                  },
+                ].map((row, i, arr) => (
+                  <div
+                    key={row.k}
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      padding: "7px 0",
+                      borderBottom: i < arr.length - 1 ? `0.5px solid ${FD.bd}` : "none",
+                    }}
+                  >
+                    <span style={{ fontSize: 13, color: FD.k5 }}>{row.k}</span>
+                    {row.badge ? (
+                      <StatusBadge status={activeDispute.status} />
+                    ) : (
+                      <span
+                        style={{
+                          fontSize: 13,
+                          fontWeight: 500,
+                          color: FD.k9,
+                          ...(row.mono ? { fontFamily: mono } : {}),
+                        }}
+                      >
+                        {row.v}
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     );
   }
 
-  // List view
+  // ── LIST VIEW ─────────────────────────────────────────────────────────────
+  const STATUS_TABS = [
+    { id: "all", label: "All" },
+    { id: "open", label: "Open" },
+    { id: "in_progress", label: "In Progress" },
+    { id: "resolved", label: "Resolved" },
+  ];
+
   return (
-    <div>
-      <div className="mb-6 flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-semibold text-gray-800 dark:text-white/90">
-            Disputes
-          </h1>
-          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-            {disputes.length} dispute{disputes.length !== 1 ? "s" : ""}
-          </p>
-        </div>
-        {canCreate && (
-          <Button size="sm" onClick={() => setShowCreate(!showCreate)}>
-            {showCreate ? "Cancel" : "Raise Dispute"}
-          </Button>
-        )}
-      </div>
-
-      {error && (
-        <div className="mb-4">
-          <Alert variant="error" title="Error" message={error} />
-        </div>
-      )}
-      {success && (
-        <div className="mb-4">
-          <Alert variant="success" title="Success" message={success} />
-        </div>
-      )}
-
-      {showCreate && (
-        <div className="mb-6 rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03]">
-          <form onSubmit={handleCreate} className="space-y-4">
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div>
-                <Label>Property</Label>
-                <select
-                  name="property"
-                  className="w-full rounded-lg border border-gray-200 bg-transparent px-4 py-2.5 text-sm text-gray-800 dark:border-gray-700 dark:text-white/90"
-                >
-                  {properties.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <Label>Unit (optional)</Label>
-                <Input name="unit" placeholder="Unit ID" />
-              </div>
-              <div>
-                <Label>Type</Label>
-                <select
-                  name="dispute_type"
-                  className="w-full rounded-lg border border-gray-200 bg-transparent px-4 py-2.5 text-sm text-gray-800 dark:border-gray-700 dark:text-white/90"
-                >
-                  {disputeTypes.map((t) => (
-                    <option key={t} value={t}>
-                      {t}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <Label>Title</Label>
-                <Input name="title" placeholder="Dispute title" />
-              </div>
-            </div>
-            <div>
-              <Label>Description</Label>
-              <TextArea
-                name="description"
-                placeholder="Describe the dispute in detail…"
-                rows={3}
-              />
-            </div>
-            <Button size="sm" disabled={submitting}>
-              {submitting ? "Creating…" : "Submit Dispute"}
-            </Button>
-          </form>
-        </div>
-      )}
-
-      {disputes.length === 0 ? (
-        <div className="rounded-2xl border border-gray-200 bg-white p-10 text-center dark:border-gray-800 dark:bg-white/[0.03]">
-          <p className="text-gray-500 dark:text-gray-400">No disputes.</p>
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {disputes.map((d) => (
+    <div
+      className={`${dmSans.className} -m-4 md:-m-6`}
+      style={{
+        fontFamily: sans,
+        background: FD.surf,
+        color: FD.k9,
+        fontSize: 14,
+        minHeight: "calc(100vh - 80px)",
+      }}
+    >
+      <FinancePageTopBar
+        crumbs={[
+          { label: "Dashboard", href: "/" },
+          { label: "Disputes" },
+        ]}
+        right={
+          canCreate ? (
             <button
-              key={d.id}
               type="button"
-              onClick={() => openDetail(d.id)}
-              className="w-full rounded-2xl border border-gray-200 bg-white p-5 text-left transition hover:border-gray-300 dark:border-gray-800 dark:bg-white/[0.03] dark:hover:border-gray-700"
+              onClick={() => setShowCreate(!showCreate)}
+              style={{
+                ...(showCreate ? financeGbtn(sans) : financePbtn(sans)),
+              }}
             >
-              <div className="flex items-start justify-between gap-2">
-                <div>
-                  <span className="font-medium text-gray-800 dark:text-white/90">
-                    {d.title}
-                  </span>
-                  <div className="mt-1 flex gap-2">
-                    <Badge
-                      variant="light"
-                      size="sm"
-                      color={statusColor[d.status] ?? "primary"}
-                    >
-                      {d.status.replace("_", " ")}
-                    </Badge>
-                    <Badge variant="light" size="sm" color="primary">
-                      {d.dispute_type}
-                    </Badge>
-                  </div>
-                </div>
-                <span className="text-xs text-gray-400">
-                  {new Date(d.created_at).toLocaleDateString()}
-                </span>
-              </div>
-              <p className="mt-2 text-sm text-gray-500 dark:text-gray-400 line-clamp-2">
-                {d.description}
-              </p>
+              {showCreate ? (
+                "Cancel"
+              ) : (
+                <>
+                  <svg
+                    width={14}
+                    height={14}
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                  >
+                    <line x1="12" y1="5" x2="12" y2="19" />
+                    <line x1="5" y1="12" x2="19" y2="12" />
+                  </svg>
+                  New dispute
+                </>
+              )}
             </button>
+          ) : undefined
+        }
+      />
+
+      <div style={{ padding: "22px 24px" }}>
+        {error && (
+          <div style={{ marginBottom: 14 }}>
+            <Alert variant="error" title="Error" message={error} />
+          </div>
+        )}
+        {success && (
+          <div style={{ marginBottom: 14 }}>
+            <Alert variant="success" title="Success" message={success} />
+          </div>
+        )}
+
+        {/* Stats row */}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(3, 1fr)",
+            gap: 10,
+            marginBottom: 20,
+          }}
+          className="max-sm:grid-cols-1"
+        >
+          {[
+            { label: "Open disputes", value: stats.open, sub: "Awaiting resolution", color: FD.r6 },
+            { label: "Under mediation", value: stats.review, sub: "In progress", color: FD.a7 },
+            { label: "Resolved this year", value: stats.done, sub: "Completed cases", color: FD.g7 },
+          ].map((s) => (
+            <div
+              key={s.label}
+              style={{
+                background: FD.wh,
+                border: `0.5px solid ${FD.bd}`,
+                borderRadius: FD.rlg,
+                padding: "14px 16px",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 11,
+                  color: FD.k5,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.3px",
+                  marginBottom: 6,
+                }}
+              >
+                {s.label}
+              </div>
+              <div style={{ fontSize: 22, fontWeight: 500, color: s.color }}>{s.value}</div>
+              <div style={{ fontSize: 11, color: FD.k5, marginTop: 4 }}>{s.sub}</div>
+            </div>
           ))}
         </div>
-      )}
+
+        {/* Create form */}
+        {showCreate && (
+          <div
+            style={{
+              background: FD.wh,
+              border: `0.5px solid ${FD.bd}`,
+              borderRadius: FD.rlg,
+              padding: "18px 20px",
+              marginBottom: 20,
+            }}
+          >
+            <div style={{ ...cardTitle, marginBottom: 16 }}>New dispute</div>
+            <form
+              onSubmit={handleCreate}
+              style={{ display: "flex", flexDirection: "column", gap: 14 }}
+            >
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                  gap: 12,
+                }}
+                className="max-sm:grid-cols-1"
+              >
+                <div>
+                  <label htmlFor="dispute_property" style={financeFieldLabelStyle}>
+                    Property
+                  </label>
+                  <select
+                    id="dispute_property"
+                    name="property"
+                    required
+                    value={createPropertyId}
+                    onChange={(e) => setCreatePropertyId(e.target.value)}
+                    className={FINANCE_FIELD_CLASS}
+                    style={financeFieldSelectStyle(sans)}
+                  >
+                    {properties.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label htmlFor="dispute_unit" style={financeFieldLabelStyle}>
+                    Unit (optional)
+                  </label>
+                  <select
+                    id="dispute_unit"
+                    name="unit"
+                    className={FINANCE_FIELD_CLASS}
+                    style={financeFieldSelectStyle(sans)}
+                    disabled={!createPropertyId || unitsLoading}
+                  >
+                    <option value="">
+                      {unitsLoading ? "Loading units..." : "All / no specific unit"}
+                    </option>
+                    {createUnits.map((u) => (
+                      <option key={u.id} value={u.id}>
+                        #{u.id} — {u.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label htmlFor="dispute_type" style={financeFieldLabelStyle}>
+                    Type
+                  </label>
+                  <select
+                    id="dispute_type"
+                    name="dispute_type"
+                    required
+                    className={FINANCE_FIELD_CLASS}
+                    style={financeFieldSelectStyle(sans)}
+                  >
+                    {disputeTypes.map((t) => (
+                      <option key={t} value={t}>
+                        {t}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label htmlFor="dispute_title" style={financeFieldLabelStyle}>
+                    Title
+                  </label>
+                  <input
+                    id="dispute_title"
+                    name="title"
+                    type="text"
+                    required
+                    placeholder="Dispute title"
+                    className={FINANCE_FIELD_CLASS}
+                    style={financeFieldInputStyle({ fontFamily: sans })}
+                  />
+                </div>
+              </div>
+              <div>
+                <label htmlFor="dispute_description" style={financeFieldLabelStyle}>
+                  Description
+                </label>
+                <textarea
+                  id="dispute_description"
+                  name="description"
+                  required
+                  rows={4}
+                  placeholder="Describe the dispute in detail…"
+                  className={FINANCE_FIELD_CLASS}
+                  style={financeFieldTextAreaStyle(96)}
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={submitting}
+                style={{
+                  ...financePbtn(sans),
+                  alignSelf: "flex-start",
+                  cursor: submitting ? "not-allowed" : "pointer",
+                  opacity: submitting ? 0.65 : 1,
+                }}
+              >
+                {submitting ? "Creating…" : "Submit dispute"}
+              </button>
+            </form>
+          </div>
+        )}
+
+        {/* Status filter tabs */}
+        <div
+          style={{
+            display: "flex",
+            gap: 6,
+            marginBottom: 16,
+            flexWrap: "wrap",
+          }}
+        >
+          {STATUS_TABS.map((tab) => {
+            const active = statusTabFilter === tab.id;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setStatusTabFilter(tab.id)}
+                style={{
+                  height: 32,
+                  padding: "0 14px",
+                  borderRadius: 20,
+                  fontSize: 12,
+                  fontWeight: 500,
+                  cursor: "pointer",
+                  border: `0.5px solid ${active ? FD.g7 : FD.bdm}`,
+                  background: active ? FD.g7 : FD.wh,
+                  color: active ? "#fff" : FD.k7,
+                  fontFamily: sans,
+                  transition: "all 0.15s",
+                }}
+              >
+                {tab.label}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Dispute table */}
+        {filteredDisputes.length === 0 ? (
+          <div
+            style={{
+              background: FD.wh,
+              border: `0.5px solid ${FD.bd}`,
+              borderRadius: FD.rlg,
+              padding: "48px 24px",
+              textAlign: "center",
+            }}
+          >
+            <div
+              style={{
+                width: 48,
+                height: 48,
+                borderRadius: "50%",
+                background: FD.k0,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                margin: "0 auto 12px",
+              }}
+            >
+              <svg
+                width={22}
+                height={22}
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke={FD.k5}
+                strokeWidth={1.8}
+                strokeLinecap="round"
+              >
+                <circle cx="12" cy="12" r="10" />
+                <line x1="12" y1="8" x2="12" y2="12" />
+                <line x1="12" y1="16" x2="12.01" y2="16" />
+              </svg>
+            </div>
+            <div style={{ fontSize: 14, fontWeight: 500, color: FD.k7, marginBottom: 4 }}>
+              No disputes
+            </div>
+            <div style={{ fontSize: 13, color: FD.k5 }}>No disputes match your filter.</div>
+          </div>
+        ) : (
+          <div
+            style={{
+              background: FD.wh,
+              border: `0.5px solid ${FD.bd}`,
+              borderRadius: FD.rlg,
+              overflow: "hidden",
+            }}
+          >
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead>
+                <tr>
+                  {["ID", "Title", "Type", "Unit", "Raised", "Status", ""].map((h) => (
+                    <th
+                      key={h || "action"}
+                      style={{
+                        fontSize: 11,
+                        fontWeight: 500,
+                        letterSpacing: "0.3px",
+                        textTransform: "uppercase",
+                        color: FD.k5,
+                        textAlign: "left",
+                        padding: "10px 16px",
+                        background: FD.k0,
+                        borderBottom: `0.5px solid ${FD.bd}`,
+                      }}
+                    >
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {filteredDisputes.map((d, idx) => {
+                  const ds = disputeStatusStyle(d.status);
+                  const tb = disputeTypeBadge(d.dispute_type);
+                  const unitName =
+                    d.unit == null
+                      ? "—"
+                      : (unitsByProperty[d.property] ?? []).find((u) => u.id === d.unit)?.name ??
+                        `Unit #${d.unit}`;
+                  const isOpen = d.status === "open" || d.status === "under_review";
+                  const isLast = idx === filteredDisputes.length - 1;
+                  return (
+                    <tr
+                      key={d.id}
+                      style={{ cursor: "pointer" }}
+                      onClick={() => openDetail(d.id)}
+                      onMouseEnter={(e) => {
+                        (e.currentTarget as HTMLTableRowElement).style.background = FD.surf;
+                      }}
+                      onMouseLeave={(e) => {
+                        (e.currentTarget as HTMLTableRowElement).style.background = "transparent";
+                      }}
+                    >
+                      <td
+                        style={{
+                          fontSize: 12,
+                          color: FD.k5,
+                          fontFamily: mono,
+                          padding: "12px 16px",
+                          borderBottom: isLast ? "none" : `0.5px solid ${FD.bd}`,
+                          verticalAlign: "middle",
+                        }}
+                      >
+                        DSP-{d.id}
+                      </td>
+                      <td
+                        style={{
+                          fontSize: 13,
+                          color: FD.k9,
+                          fontWeight: 500,
+                          padding: "12px 16px",
+                          borderBottom: isLast ? "none" : `0.5px solid ${FD.bd}`,
+                          verticalAlign: "middle",
+                        }}
+                      >
+                        {d.title}
+                      </td>
+                      <td
+                        style={{
+                          padding: "12px 16px",
+                          borderBottom: isLast ? "none" : `0.5px solid ${FD.bd}`,
+                          verticalAlign: "middle",
+                        }}
+                      >
+                        <span
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            padding: "2px 8px",
+                            borderRadius: 10,
+                            fontSize: 11,
+                            fontWeight: 500,
+                            background: tb.bg,
+                            color: tb.color,
+                          }}
+                        >
+                          {tb.label}
+                        </span>
+                      </td>
+                      <td
+                        style={{
+                          fontSize: 12,
+                          fontFamily: mono,
+                          padding: "12px 16px",
+                          borderBottom: isLast ? "none" : `0.5px solid ${FD.bd}`,
+                          color: FD.k9,
+                          verticalAlign: "middle",
+                        }}
+                      >
+                        {unitName}
+                      </td>
+                      <td
+                        style={{
+                          fontSize: 12,
+                          color: FD.k5,
+                          padding: "12px 16px",
+                          borderBottom: isLast ? "none" : `0.5px solid ${FD.bd}`,
+                          verticalAlign: "middle",
+                        }}
+                      >
+                        {new Date(d.created_at).toLocaleDateString("en-GB", {
+                          day: "numeric",
+                          month: "short",
+                          year: "numeric",
+                        })}
+                      </td>
+                      <td
+                        style={{
+                          padding: "12px 16px",
+                          borderBottom: isLast ? "none" : `0.5px solid ${FD.bd}`,
+                          verticalAlign: "middle",
+                        }}
+                      >
+                        <span
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            padding: "2px 8px",
+                            borderRadius: 10,
+                            fontSize: 11,
+                            fontWeight: 500,
+                            background: ds.bg,
+                            color: ds.color,
+                          }}
+                        >
+                          {ds.label}
+                        </span>
+                      </td>
+                      <td
+                        style={{
+                          padding: "12px 16px",
+                          borderBottom: isLast ? "none" : `0.5px solid ${FD.bd}`,
+                          verticalAlign: "middle",
+                        }}
+                      >
+                        <button
+                          type="button"
+                          style={{
+                            height: 24,
+                            padding: "0 9px",
+                            borderRadius: FD.rsm,
+                            fontSize: 11,
+                            fontWeight: 500,
+                            cursor: "pointer",
+                            fontFamily: sans,
+                            border: `0.5px solid ${isOpen ? FD.g7 : FD.bdm}`,
+                            background: isOpen ? FD.g7 : FD.wh,
+                            color: isOpen ? "#fff" : FD.k7,
+                            transition: "all .15s",
+                          }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openDetail(d.id);
+                          }}
+                        >
+                          View
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

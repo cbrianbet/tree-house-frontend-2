@@ -52,6 +52,17 @@ function IconCard() {
     </svg>
   );
 }
+function IconReceipt() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" style={{ width: 15, height: 15 }}>
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+      <polyline points="14 2 14 8 20 8" />
+      <line x1="8" y1="13" x2="16" y2="13" />
+      <line x1="8" y1="17" x2="16" y2="17" />
+      <line x1="8" y1="9" x2="12" y2="9" />
+    </svg>
+  );
+}
 function IconDollar() {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" style={{ width: 15, height: 15 }}>
@@ -147,9 +158,11 @@ function getNavSections(roleId: number): NavSection[] {
   if ([ROLE_ADMIN, ROLE_LANDLORD, ROLE_AGENT, ROLE_TENANT].includes(roleId)) {
     const finance: NavItem[] = [
       { name: "Invoices", path: "/billing", icon: <IconCard /> },
+      { name: "Receipts", path: "/billing/receipts", icon: <IconReceipt /> },
     ];
     if ([ROLE_ADMIN, ROLE_LANDLORD].includes(roleId)) {
       finance.push(
+        { name: "Billing config", path: "/billing/config", icon: <IconSettings /> },
         { name: "Expenses", path: "/billing/finances", icon: <IconDollar /> },
         { name: "Reports", path: "/billing/reports", icon: <IconChart /> },
       );
@@ -164,6 +177,9 @@ function getNavSections(roleId: number): NavSection[] {
   }
   if ([ROLE_ADMIN, ROLE_LANDLORD, ROLE_TENANT, ROLE_AGENT].includes(roleId)) {
     ops.push({ name: "Disputes", path: "/disputes", icon: <IconAlert /> });
+  }
+  if ([ROLE_ADMIN, ROLE_LANDLORD].includes(roleId)) {
+    ops.push({ name: "Agents", path: "/agents", icon: <IconUsers /> });
   }
   ops.push(
     {
@@ -191,10 +207,24 @@ function getNavSections(roleId: number): NavSection[] {
     items: [
       { name: "Saved Searches", path: "/saved-searches", icon: <IconSearch /> },
       { name: "Settings", path: "/settings", icon: <IconSettings /> },
+      { name: "Alert preferences", path: "/settings/notifications", icon: <IconBell /> },
     ],
   });
 
   return sections;
+}
+
+/** Invoices is only `/billing` and numeric `/billing/:id`, not other finance sub-routes. */
+function isNavItemActive(itemPath: string, pathname: string): boolean {
+  if (itemPath === "/") return pathname === "/";
+  if (itemPath === "/billing") {
+    if (pathname === "/billing") return true;
+    return /^\/billing\/\d+(?:\/|$)/.test(pathname);
+  }
+  if (itemPath === "/settings") {
+    return pathname === "/settings" || pathname === "/settings/";
+  }
+  return pathname === itemPath || pathname.startsWith(`${itemPath}/`);
 }
 
 /** DESIGN.md — role-assigned sidebar backgrounds (never use one color for all roles). */
@@ -262,9 +292,6 @@ const AppSidebar: React.FC = () => {
   const initials =
     `${user.first_name?.charAt(0) ?? ""}${user.last_name?.charAt(0) ?? ""}`.toUpperCase() ||
     "U";
-
-  const isActive = (path: string) =>
-    path === "/" ? pathname === "/" : pathname.startsWith(path);
 
   return (
     <>
@@ -355,7 +382,7 @@ const AppSidebar: React.FC = () => {
                 {section.label}
               </div>
               {section.items.map((item) => {
-                const active = isActive(item.path);
+                const active = isNavItemActive(item.path, pathname);
                 return (
                   <Link
                     key={item.path}

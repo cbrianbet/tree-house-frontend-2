@@ -5,6 +5,7 @@ import { loadStripe, type Stripe, type StripeCardElement } from "@stripe/stripe-
 import { listInvoices, payInvoice, getInvoice, listReceipts } from "@/lib/api/billing";
 import type { Invoice, InvoiceStatus, Receipt } from "@/types/api";
 import RoleGuard from "@/components/auth/RoleGuard";
+import PageLoader from "@/components/ui/PageLoader";
 
 // ── Stripe setup ──────────────────────────────────────────────────────────────
 
@@ -90,7 +91,7 @@ function PaymentModal({
   // Step 1 — initiate payment on mount
   useEffect(() => {
     let cancelled = false;
-    payInvoice(invoice.id, invoice.total_amount)
+    payInvoice(invoice.id)
       .then(({ client_secret, payment_id }) => {
         if (cancelled) return;
         setClientSecret(client_secret);
@@ -686,11 +687,7 @@ function InvoicesContent() {
         )}
 
         {/* Loading */}
-        {loading && (
-          <div style={{ display: "flex", justifyContent: "center", padding: "60px 0" }}>
-            <SpinnerSvg size={32} color="#0D9488" />
-          </div>
-        )}
+        {loading && <PageLoader />}
 
         {/* Empty */}
         {!loading && !error && invoices.length === 0 && (
